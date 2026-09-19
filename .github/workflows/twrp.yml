@@ -27,7 +27,7 @@ jobs:
         
         # تنظيف وتحميل الرابط باستخدام المتغير الآمن
         CLEAN_URL=(echo "RAW_URL" | sed 's/\\//g')
-        curl -L -o recovery.img "\$CLEAN_URL"
+        curl -L -o recovery.img "$CLEAN_URL"
         
         if [ ! -s "recovery.img" ]; then
           echo "❌ Error: Download failed or file is empty! Check your link."
