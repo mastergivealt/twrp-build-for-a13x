@@ -114,6 +114,11 @@ jobs:
           echo "BOARD_AVB_ENABLE := false"
         } >> "$BOARD_CONFIG"
 
+    - name: Fix TW_THEME in BoardConfig
+      run: |
+        find device/ -name "BoardConfig*.mk" -exec sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' {} +
+        find device/ -name "*.mk" -exec sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' {} +
+
     - name: Build TWRP Recovery Image
       run: |
         cd twrp-source
