@@ -18,31 +18,21 @@ jobs:
     - name: Checkout Your Repository
       uses: actions/checkout@v4
 
-    - name: Maximize Runner Disk Space
-      run: |
-        echo "🧹 Cleaning up runner disk space..."
-        sudo rm -rf /usr/share/dotnet
-        sudo rm -rf /usr/local/lib/android
-        sudo rm -rf /opt/ghc
-        sudo rm -rf /usr/local/share/boost
-        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-        sudo apt-get clean
-        df -h
-
     - name: Download Recovery Image From External URL
       env:
         RAW_URL: ${{ github.event.inputs.RECOVERY_URL }}
       run: |
-        echo "📥 Downloading recovery.img..."
+        echo "📥 Downloading recovery.img from external link..."
+        
+        # Proper command substitution using $()
         CLEAN_URL=$(echo "$RAW_URL" | sed 's/\\//g')
         curl -L -o recovery.img "$CLEAN_URL"
         
         if [ ! -s "recovery.img" ]; then
-          echo "❌ Error: Download failed or file is empty!"
+          echo "❌ Error: Download failed or file is empty! Check your link."
           exit 1
         fi
         echo "✅ recovery.img downloaded successfully. Size: $(du -sh recovery.img | cut -f1)"
-
     - name: Set up Python Environment
       uses: actions/setup-python@v5
       with:
@@ -51,9 +41,8 @@ jobs:
     - name: Install twrpdtgen & Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cpio build-essential zip curl libc6-dev libncurses5-dev libssl-dev libxml2-utils xsltproc unzip gnupg repo
+        sudo apt-get install -y cpio
         pip3 install twrpdtgen
-
     - name: Generate Device Tree from recovery.img
       run: |
         mkdir -p dt-output
@@ -64,112 +53,85 @@ jobs:
         
         echo "MANUFACTURER=$MANUFACTURER" >> $GITHUB_ENV
         echo "CODENAME=$CODENAME" >> $GITHUB_ENV
-        echo "✅ Generated tree for $MANUFACTURER / $CODENAME"
-
+        echo "✅ Device tree generated for $MANUFACTURER / $CODENAME"
+    - name: Clean up and Prepare Android Build Environment
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get install -y bc build-essential zip curl libc6-dev libncurses5-dev libssl-dev libxml2-utils xsltproc unzip gnupg repo
     - name: Set up Git Identity
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-
     - name: Sync TWRP Source Code
       run: |
         mkdir twrp-source && cd twrp-source
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp -b twrp-12.1
         repo sync -j$(nproc) --force-sync --no-clone-bundle --no-tags
-
     - name: Move Generated Device Tree to Source
       run: |
         mkdir -p twrp-source/device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}
         cp -r dt-output/${{ env.MANUFACTURER }}/${{ env.CODENAME }}/* twrp-source/device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}/
-
-    - name: Patch BoardConfig.mk for Samsung Kernel & Graphics
-      run: |
-        BOARD_CONFIG="twrp-source/device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}/BoardConfig.mk"
-        echo "🔧 Applying display, storage, and dynamic partition patches..."
         
-        {
-          echo ""
-          echo "# TWRP Display and Graphics"
-          echo "TARGET_SCREEN_HEIGHT := 1600"
-          echo "TARGET_SCREEN_WIDTH := 720"
-          echo "TW_THEME := portrait_hd"
-          echo "TW_DEFAULT_BRIGHTNESS := 100"
-          echo "TW_MAX_BRIGHTNESS := 255"
-          echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
-          echo "TW_NO_SCREEN_BLANK := true"
-          echo "TW_NO_SCREEN_TIMEOUT := true"
-          echo "TW_BRIGHTNESS_PATH := \"/sys/class/backlight/panel/brightness\""
-          echo "TARGET_RECOVERY_PIXEL_FORMAT := \"BGRA_8888\""
-          echo ""
-          echo "# Samsung Kernel and Boot Flags"
-          echo "BOARD_HAS_NO_REAL_SDCARD := true"
-          echo "TW_EXCLUDE_DEFAULT_USB_INIT := true"
-          echo "TW_EXTRA_LANGUAGES := true"
-          echo "TW_INCLUDE_CRYPTO := false"
-          echo "TW_INPUT_BLACKLIST := \"hbtp_vm\""
-          echo ""
-          echo "# Dynamic Partitions and AVB"
-          echo "BOARD_DYNAMIC_PARTITION_ENABLE := true"
-          echo "TW_INCLUDE_FASTBOOTD := true"
-          echo "BOARD_AVB_ENABLE := false"
-        } >> "$BOARD_CONFIG"
-
-    - name: Fix TW_THEME in BoardConfig
-      run: |
-        find device/ -name "BoardConfig*.mk" -exec sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' {} +
-        find device/ -name "*.mk" -exec sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' {} +
-
+        # Verify device tree files exist
+        ls -la twrp-source/device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}/
     - name: Build TWRP Recovery Image
       run: |
         cd twrp-source
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        
+
         DEV_DIR="device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}"
-        
-        # 1. Clean up obsolete scripts
+
+        # 1. Remove deprecated vendorsetup.sh
         rm -f "$DEV_DIR/vendorsetup.sh"
-        
-        # 2. Patch OmniROM paths to TWRP
-        sed -i 's|vendor/omni/|vendor/twrp/|g' "$DEV_DIR"/*.mk 2>/dev/null || true
-        
-        # 3. Resolve target product makefile
+
+        # 2. Convert OmniROM paths to TWRP paths in all device makefiles
+        echo "🔧 Patching device tree from OmniROM to TWRP format..."
+        sed -i 's|vendor/omni/|vendor/twrp/|g' "$DEV_DIR"/*.mk
+        sed -i 's|vendor/omni/|vendor/twrp/|g' "$DEV_DIR"/*/*.mk 2>/dev/null || true
+
+        # -------------------------------------------------------------
+        # FIX: Patch TW_THEME to fix the "Could not find ui.xml" error
+        # -------------------------------------------------------------
+        echo "🔧 Fixing invalid TW_THEME setting..."
+        sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' "$DEV_DIR/BoardConfig.mk"
+        # -------------------------------------------------------------
+
+        # 3. Detect target product file (omni_a13x.mk or twrp_a13x.mk)
         TARGET_MK=$(find "$DEV_DIR" -maxdepth 1 -name "omni_*.mk" -o -name "twrp_*.mk" | head -n 1)
         if [ -n "$TARGET_MK" ]; then
           PRODUCT_NAME=$(basename "$TARGET_MK" .mk)
         else
           PRODUCT_NAME="omni_${{ env.CODENAME }}"
         fi
-        
+
+        echo "Detected Product Name: $PRODUCT_NAME"
+
+        # 4. Ensure AndroidProducts.mk exists and registers the makefile
         if [ ! -f "$DEV_DIR/AndroidProducts.mk" ]; then
           echo "PRODUCT_MAKEFILES := \$(LOCAL_DIR)/${PRODUCT_NAME}.mk" > "$DEV_DIR/AndroidProducts.mk"
         fi
-        
+
+        # 5. Lunch target and build
         echo "Lunching target: ${PRODUCT_NAME}-eng"
         lunch ${PRODUCT_NAME}-eng
-        
         mka recoveryimage -j$(nproc)
-
     - name: Package Output into Samsung Odin Tar File
       run: |
         cd twrp-source/out/target/product/${{ env.CODENAME }}/
-        
-        if [ ! -f "recovery.img" ]; then
-          echo "❌ Error: Built recovery.img not found!"
-          exit 1
-        fi
-        
         tar -cvf twrp_samsung_${{ env.CODENAME }}.tar recovery.img
         mv twrp_samsung_${{ env.CODENAME }}.tar $GITHUB_WORKSPACE/
-        echo "✅ Successfully packaged TWRP tar file. Size: $(du -sh $GITHUB_WORKSPACE/twrp_samsung_${{ env.CODENAME }}.tar | cut -f1)"
-
     - name: Create Release and Upload Odin Tar File
       uses: softprops/action-gh-release@v2
       with:
         tag_name: TWRP-v${{ github.run_number }}
-        name: TWRP Recovery for ${{ env.MANUFACTURER }} ${{ env.CODENAME }} (Build #${{ github.run_number }})
+        name: TWRP Custom Recovery for ${{ env.MANUFACTURER }} ${{ env.CODENAME }} (Build #${{ github.run_number }})
         body: |
-          Build completed with full Samsung display and dynamic partition patches applied!
+          Automated compilation successful!
+          - Generated device tree dynamically from your stock `recovery.img`.
+          - Source Base: Minimal Manifest TWRP Android 12.1.
+          - Device Codename: ${{ env.CODENAME }}
+          
           Flash the attached `.tar` file via Odin in the **AP** slot.
         files: |
           twrp_samsung_${{ env.CODENAME }}.tar
