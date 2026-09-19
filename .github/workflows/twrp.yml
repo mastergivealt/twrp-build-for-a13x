@@ -90,14 +90,12 @@ jobs:
         sed -i 's|vendor/omni/|vendor/twrp/|g' "$DEV_DIR"/*.mk
         sed -i 's|vendor/omni/|vendor/twrp/|g' "$DEV_DIR"/*/*.mk 2>/dev/null || true
 
-        # -------------------------------------------------------------
-        # FIX: Patch TW_THEME to fix the "Could not find ui.xml" error
-        # -------------------------------------------------------------
-        echo "🔧 Fixing invalid TW_THEME setting..."
-        sed -i 's/TW_THEME := portrait_hd/TW_THEME := portrait_hdpi/g' "$DEV_DIR/BoardConfig.mk"
-        # -------------------------------------------------------------
+        # 3. Fix TW_THEME explicitly without double-replacing
+        echo "🔧 Setting correct TW_THEME..."
+        sed -i '/TW_THEME/d' "$DEV_DIR/BoardConfig.mk"
+        echo "TW_THEME := portrait_hdpi" >> "$DEV_DIR/BoardConfig.mk"
 
-        # 3. Detect target product file (omni_a13x.mk or twrp_a13x.mk)
+        # 4. Detect target product file (omni_a13x.mk or twrp_a13x.mk)
         TARGET_MK=$(find "$DEV_DIR" -maxdepth 1 -name "omni_*.mk" -o -name "twrp_*.mk" | head -n 1)
         if [ -n "$TARGET_MK" ]; then
           PRODUCT_NAME=$(basename "$TARGET_MK" .mk)
@@ -107,12 +105,12 @@ jobs:
 
         echo "Detected Product Name: $PRODUCT_NAME"
 
-        # 4. Ensure AndroidProducts.mk exists and registers the makefile
+        # 5. Ensure AndroidProducts.mk exists and registers the makefile
         if [ ! -f "$DEV_DIR/AndroidProducts.mk" ]; then
           echo "PRODUCT_MAKEFILES := \$(LOCAL_DIR)/${PRODUCT_NAME}.mk" > "$DEV_DIR/AndroidProducts.mk"
         fi
 
-        # 5. Lunch target and build
+        # 6. Lunch target and build
         echo "Lunching target: ${PRODUCT_NAME}-eng"
         lunch ${PRODUCT_NAME}-eng
         mka recoveryimage -j$(nproc)
