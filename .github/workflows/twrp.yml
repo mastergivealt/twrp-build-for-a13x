@@ -20,7 +20,7 @@ jobs:
 
     - name: Maximize Runner Disk Space
       run: |
-        echo "🧹 Cleaning up runner disk space to prevent out-of-memory/disk errors..."
+        echo "🧹 Cleaning up runner disk space..."
         sudo rm -rf /usr/share/dotnet
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /opt/ghc
@@ -85,34 +85,34 @@ jobs:
     - name: Patch BoardConfig.mk for Samsung Kernel & Graphics
       run: |
         BOARD_CONFIG="twrp-source/device/${{ env.MANUFACTURER }}/${{ env.CODENAME }}/BoardConfig.mk"
-        
         echo "🔧 Applying display, storage, and dynamic partition patches..."
-        cat << 'EOF' >> "$BOARD_CONFIG"
-
-# --- TWRP Display & Graphics ---
-TARGET_SCREEN_HEIGHT := 1600
-TARGET_SCREEN_WIDTH := 720
-TW_THEME := portrait_hd
-TW_DEFAULT_BRIGHTNESS := "100"
-TW_MAX_BRIGHTNESS := "255"
-RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true
-TW_NO_SCREEN_BLANK := true
-TW_NO_SCREEN_TIMEOUT := true
-TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
-TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
-
-# --- Samsung Kernel & Boot Flags ---
-BOARD_HAS_NO_REAL_SDCARD := true
-TW_EXCLUDE_DEFAULT_USB_INIT := true
-TW_EXTRA_LANGUAGES := true
-TW_INCLUDE_CRYPTO := false
-TW_INPUT_BLACKLIST := "hbtp_vm"
-
-# --- Dynamic Partitions & AVB ---
-BOARD_DYNAMIC_PARTITION_ENABLE := true
-TW_INCLUDE_FASTBOOTD := true
-BOARD_AVB_ENABLE := false
-EOF
+        
+        {
+          echo ""
+          echo "# TWRP Display and Graphics"
+          echo "TARGET_SCREEN_HEIGHT := 1600"
+          echo "TARGET_SCREEN_WIDTH := 720"
+          echo "TW_THEME := portrait_hd"
+          echo "TW_DEFAULT_BRIGHTNESS := 100"
+          echo "TW_MAX_BRIGHTNESS := 255"
+          echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
+          echo "TW_NO_SCREEN_BLANK := true"
+          echo "TW_NO_SCREEN_TIMEOUT := true"
+          echo "TW_BRIGHTNESS_PATH := \"/sys/class/backlight/panel/brightness\""
+          echo "TARGET_RECOVERY_PIXEL_FORMAT := \"BGRA_8888\""
+          echo ""
+          echo "# Samsung Kernel and Boot Flags"
+          echo "BOARD_HAS_NO_REAL_SDCARD := true"
+          echo "TW_EXCLUDE_DEFAULT_USB_INIT := true"
+          echo "TW_EXTRA_LANGUAGES := true"
+          echo "TW_INCLUDE_CRYPTO := false"
+          echo "TW_INPUT_BLACKLIST := \"hbtp_vm\""
+          echo ""
+          echo "# Dynamic Partitions and AVB"
+          echo "BOARD_DYNAMIC_PARTITION_ENABLE := true"
+          echo "TW_INCLUDE_FASTBOOTD := true"
+          echo "BOARD_AVB_ENABLE := false"
+        } >> "$BOARD_CONFIG"
 
     - name: Build TWRP Recovery Image
       run: |
