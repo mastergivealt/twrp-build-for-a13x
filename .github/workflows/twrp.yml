@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       RECOVERY_URL:
-        description: 'https://files.catbox.moe/jxz5li.img'
+        description: 'Paste the DIRECT download URL of your recovery.img'
         required: true
-        default: ''
+        default: 'https://files.catbox.moe/jxz5li.img' # وضعنا رابطك هنا كخيار افتراضي تسهيلاً لك
 
 jobs:
   build:
@@ -21,8 +21,12 @@ jobs:
     - name: Download Recovery Image From External URL
       run: |
         echo "📥 Downloading recovery.img from external link..."
-        # استخدام أمر curl لتحميل الملف وتسميته تلقائياً recovery.img
-        curl -L -o recovery.img "\${{ github.event.inputs.RECOVERY_URL }}"
+        
+        # تنظيف الرابط تلقائياً من أي علامات مائلة عكسية (Backslashes) قد تظهر بالخطأ
+        CLEAN_URL=(echo "{{ github.event.inputs.RECOVERY_URL }}" | sed 's/\\//g')
+        
+        # تشغيل أمر curl باستخدام الرابط النظيف وبدون علامات مائلة زائدة
+        curl -L -o recovery.img "\$CLEAN_URL"
         
         if [ ! -s "recovery.img" ]; then
           echo "❌ Error: Download failed or file is empty! Check your link."
